@@ -31,7 +31,7 @@ TIPI_RP = {
     "Lateral Inflow Hydrographs": (True, "pretok", None),
     "Uniform Lateral Inflow Hydrographs": (True, "pretok", None),
     "Groundwater Interflow": (True, "gladina_pv", None),
-    "Normal Depths": (False, "naklon_trenja", None),
+    "Normal Depths": (False, "naklon_normalne_gladine", None),
     "Rating Curves": (False, "gladina", "pretok"),
 }
 
@@ -49,8 +49,8 @@ KODE_RP = {
 }
 
 ENOTE = {
-    "SI Units": {"pretok": "m3/s", "gladina": "m", "gladina_pv": "m", "padavine": "mm", "naklon_trenja": "m/m"},
-    "US Customary": {"pretok": "cfs", "gladina": "ft", "gladina_pv": "ft", "padavine": "in", "naklon_trenja": "ft/ft"},
+    "SI Units": {"pretok": "m3/s", "gladina": "m", "gladina_pv": "m", "padavine": "mm", "naklon_normalne_gladine": "m/m"},
+    "US Customary": {"pretok": "cfs", "gladina": "ft", "gladina_pv": "ft", "padavine": "in", "naklon_normalne_gladine": "ft/ft"},
 }
 
 
@@ -256,7 +256,15 @@ def preberi_rp_vrednosti(f, id_obmocja, linije, zacetek):
             if not isinstance(ds, h5py.Dataset):
                 continue
             obmocje, linija = _ime_rp(ds, ime_ds)
-            bc_id = bc_po_imenu.get((obmocje, linija)) or f"{id_obmocja}_{'RP' if linija else 'OBM'}_{linija or obmocje}"
+            # RP brez linije (npr. padavine) velja za celotno območje; šifra tipa loči več takih RP na istem območju
+            bc_id = bc_po_imenu.get((obmocje, linija)) or (
+                f"{id_obmocja}_RP_{linija}" if linija else f"{id_obmocja}_OBM_{obmocje}_{KODE_RP.get(tip, 'X')}")
+            # pri 'Use Fixed Start Time' se časovna vrsta ne začne ob začetku simulacije
+            try:
+                zacetek_rp = _ras_datum(_txt(ds.attrs["Start Date"]))
+            except (KeyError, ValueError):
+                zacetek_rp = zacetek
+            zamik_s = (zacetek_rp - zacetek).total_seconds()
             ime = linija or f"{opis1}_{obmocje}"  # RP brez linije (npr. padavine na celotnem območju)
             podatki = np.atleast_2d(ds[()])
             if podatki.shape[0] == 1 and podatki.shape[1] != 2:  # npr. Normal Depth: ena vrednost
@@ -267,8 +275,9 @@ def preberi_rp_vrednosti(f, id_obmocja, linije, zacetek):
                                opis_vrednosti=opis1, enota=enote.get(opis1, ""),
                                opis_vrednosti_2=opis2, enota_2=enote.get(opis2, "") if opis2 else None)
                 if ima_cas and len(vr) >= 2:
-                    sekunde = round(vr[0] * 86400)  # čas je v dnevih od začetka simulacije
-                    vrstica.update(cas=zacetek + timedelta(seconds=sekunde), cas_h=round(sekunde / 3600, 6),
+                    sekunde = round(vr[0] * 86400)  # čas je v dnevih od začetka časovne vrste
+                    vrstica.update(cas=zacetek_rp + timedelta(seconds=sekunde),
+                                   cas_h=round((zamik_s + sekunde) / 3600, 6),  # ure od začetka simulacije
                                    vrednost=vr[1], vrednost_2=vr[2] if len(vr) > 2 else None)
                 else:
                     vrstica.update(vrednost=vr[0], vrednost_2=vr[1] if len(vr) > 1 else None)
@@ -364,7 +373,8 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
     # ime tabele je zapisano tudi pri liniji
     vrednosti["koda_tipa"] = vrednosti["tip"].map(KODE_RP).fillna("X")
     kode = vrednosti.groupby("bc_id")["koda_tipa"].first()
-    tabele = {bc_id: re.sub(r"\W", "_", bc_id.replace("_RP", "_rp").replace("_OBM", "_rp_obm")) + f"_{kode[bc_id]}"
+    tabele = {bc_id: re.sub(r"\W", "_", bc_id.replace("_RP", "_rp").replace("_OBM", "_rp_obm"))
+                     + ("" if "_OBM_" in bc_id else f"_{kode[bc_id]}")  # bc_id območja že vsebuje šifro
               for bc_id in sorted(kode.index)}
     linije["koda_tipa"] = linije["bc_id"].map(kode)
     linije["tabela_vrednosti"] = linije["bc_id"].map(tabele)
