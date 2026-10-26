@@ -333,12 +333,22 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
     mapa.mkdir(parents=True, exist_ok=True)
     gpkg = mapa / f"{id_obmocja}_hecras.gpkg"
     txt = mapa / f"{id_obmocja}_nastavitve.txt"
-    gpkg.unlink(missing_ok=True)
+    try:
+        gpkg.unlink(missing_ok=True)
+    except PermissionError:
+        raise NapakaIzvoza(f"'{gpkg}' je odprt v drugem programu (npr. QGIS). Zaprite ga in ponovite izvoz.")
+
+    # vsak robni pogoj dobi svojo tabelo vrednosti; ime tabele je zapisano tudi pri liniji
+    tabele = {bc_id: "rp_" + re.sub(r"\W", "_", bc_id) for bc_id in sorted(vrednosti["bc_id"].unique())}
+    linije["tabela_vrednosti"] = linije["bc_id"].map(tabele)
 
     obmocje.to_file(gpkg, layer="obmocje_modela", driver="GPKG")
     linije.to_file(gpkg, layer="robni_pogoji_linije", driver="GPKG")
-    pyogrio.write_dataframe(vrednosti, gpkg, layer="robni_pogoji_vrednosti", driver="GPKG")
+    for bc_id, tabela in tabele.items():
+        sk = vrednosti[vrednosti["bc_id"] == bc_id].dropna(axis=1, how="all")
+        pyogrio.write_dataframe(sk, gpkg, layer=tabela, driver="GPKG")
     txt.write_text(nastavitve, encoding="utf-8-sig")  # BOM, da šumnike prav prikaže tudi Beležnica
 
     return {"projekt": prj, "plan": plan, "plan_hdf": plan_hdf, "gpkg": gpkg, "txt": txt,
-            "st_obmocij": len(obmocje), "st_rp_linij": len(linije), "st_rp_vrednosti": len(vrednosti)}
+            "st_obmocij": len(obmocje), "st_rp_linij": len(linije), "st_rp_vrednosti": len(vrednosti),
+            "tabele_rp": list(tabele.values())}

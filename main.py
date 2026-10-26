@@ -23,7 +23,7 @@ def main():
     print(f"Aktivni plan:   {r['plan']}  ({r['plan_hdf'].name})")
     print(f"2D območja:     {r['st_obmocij']}")
     print(f"RP linije:      {r['st_rp_linij']}")
-    print(f"RP vrednosti:   {r['st_rp_vrednosti']} vrstic")
+    print(f"RP vrednosti:   {r['st_rp_vrednosti']} vrstic v {len(r['tabele_rp'])} tabelah: {', '.join(r['tabele_rp'])}")
     print(f"GPKG:           {r['gpkg']}")
     print(f"TXT:            {r['txt']}")
 
