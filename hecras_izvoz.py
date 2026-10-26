@@ -77,6 +77,11 @@ def _atributi(f, pot):
     return {k: _txt(v) for k, v in f[pot].attrs.items()} if pot in f else {}
 
 
+def _cisto(v):
+    """Številko iz HDF (pogosto float32) pretvori v float brez šuma, npr. 0.003000000026 -> 0.003."""
+    return float(str(v))
+
+
 def _ras_datum(s):
     """'01jan2000 00:00:00', '31dec1999 2400', '01JAN2000,0000' -> datetime."""
     s = s.strip().replace(",", " ").replace(":", "")
@@ -252,22 +257,25 @@ def preberi_rp_vrednosti(f, id_obmocja, linije, zacetek):
                 continue
             obmocje, linija = _ime_rp(ds, ime_ds)
             bc_id = bc_po_imenu.get((obmocje, linija)) or f"{id_obmocja}_{'RP' if linija else 'OBM'}_{linija or obmocje}"
-            podatki = np.atleast_2d(ds[()].astype(float))
+            ime = linija or f"{opis1}_{obmocje}"  # RP brez linije (npr. padavine na celotnem območju)
+            podatki = np.atleast_2d(ds[()])
             if podatki.shape[0] == 1 and podatki.shape[1] != 2:  # npr. Normal Depth: ena vrednost
                 podatki = podatki.T
             for i, vr in enumerate(podatki, start=1):
-                vrstica = dict(id_obmocja=id_obmocja, bc_id=bc_id, ime=linija, obmocje_2d=obmocje, tip=tip, zap_st=i,
+                vr = [_cisto(v) for v in vr]
+                vrstica = dict(id_obmocja=id_obmocja, bc_id=bc_id, ime=ime, obmocje_2d=obmocje, tip=tip, zap_st=i,
                                opis_vrednosti=opis1, enota=enote.get(opis1, ""),
                                opis_vrednosti_2=opis2, enota_2=enote.get(opis2, "") if opis2 else None)
                 if ima_cas and len(vr) >= 2:
-                    dni = float(vr[0])
-                    vrstica.update(cas=(zacetek + timedelta(days=dni)).strftime("%Y-%m-%d %H:%M:%S"),
-                                   cas_h=round(dni * 24, 6), vrednost=float(vr[1]),
-                                   vrednost_2=float(vr[2]) if len(vr) > 2 else None)
+                    sekunde = round(vr[0] * 86400)  # čas je v dnevih od začetka simulacije
+                    vrstica.update(cas=zacetek + timedelta(seconds=sekunde), cas_h=round(sekunde / 3600, 6),
+                                   vrednost=vr[1], vrednost_2=vr[2] if len(vr) > 2 else None)
                 else:
-                    vrstica.update(vrednost=float(vr[0]), vrednost_2=float(vr[1]) if len(vr) > 1 else None)
+                    vrstica.update(vrednost=vr[0], vrednost_2=vr[1] if len(vr) > 1 else None)
                 vrstice.append(vrstica)
-    return pd.DataFrame(vrstice, columns=stolpci)
+    df = pd.DataFrame(vrstice, columns=stolpci)
+    df["cas"] = pd.to_datetime(df["cas"])
+    return df
 
 
 # ---------------------------------------------------------------- nastavitve -> TXT
