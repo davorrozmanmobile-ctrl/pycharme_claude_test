@@ -35,6 +35,19 @@ TIPI_RP = {
     "Rating Curves": (False, "gladina", "pretok"),
 }
 
+# Kratka šifra tipa robnega pogoja za ime tabele v GPKG
+KODE_RP = {
+    "Flow Hydrographs": "Q",
+    "Stage Hydrographs": "H",
+    "Stage and Flow Hydrographs": "HQ",
+    "Precipitation Hydrographs": "P",
+    "Lateral Inflow Hydrographs": "QL",
+    "Uniform Lateral Inflow Hydrographs": "QLU",
+    "Groundwater Interflow": "GW",
+    "Normal Depths": "ND",
+    "Rating Curves": "QH",
+}
+
 ENOTE = {
     "SI Units": {"pretok": "m3/s", "gladina": "m", "gladina_pv": "m", "padavine": "mm", "naklon_trenja": "m/m"},
     "US Customary": {"pretok": "cfs", "gladina": "ft", "gladina_pv": "ft", "padavine": "in", "naklon_trenja": "ft/ft"},
@@ -310,6 +323,7 @@ def sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti):
     vrstice += _sekcija(f"ZAČETNI POGOJI ({flow_txt.name} + HDF)", zacetni)
     vrstice += _sekcija("ZAGON (HDF Results Summary)", list(_atributi(f, "Results/Unsteady/Summary").items()))
     vrstice += _sekcija("ROBNI POGOJI (povezava z GPKG prek bc_id)", rp)
+    vrstice += _sekcija("ŠIFRE TIPOV RP (konec imena tabele v GPKG)", [(v, k) for k, v in KODE_RP.items()])
     return "\n".join(vrstice) + "\n"
 
 
@@ -338,12 +352,17 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
     except PermissionError:
         raise NapakaIzvoza(f"'{gpkg}' je odprt v drugem programu (npr. QGIS). Zaprite ga in ponovite izvoz.")
 
-    # vsak robni pogoj dobi svojo tabelo vrednosti; ime tabele je zapisano tudi pri liniji
-    tabele = {bc_id: "rp_" + re.sub(r"\W", "_", bc_id) for bc_id in sorted(vrednosti["bc_id"].unique())}
+    # vsak robni pogoj dobi svojo tabelo vrednosti, poimenovano <bc_id>_<šifra tipa>, npr. 1100_01_rp01_Q;
+    # ime tabele je zapisano tudi pri liniji
+    vrednosti["koda_tipa"] = vrednosti["tip"].map(KODE_RP).fillna("X")
+    kode = vrednosti.groupby("bc_id")["koda_tipa"].first()
+    tabele = {bc_id: re.sub(r"\W", "_", bc_id.replace("_RP", "_rp").replace("_OBM", "_rp_obm")) + f"_{kode[bc_id]}"
+              for bc_id in sorted(kode.index)}
+    linije["koda_tipa"] = linije["bc_id"].map(kode)
     linije["tabela_vrednosti"] = linije["bc_id"].map(tabele)
 
-    obmocje.to_file(gpkg, layer="obmocje_modela", driver="GPKG")
-    linije.to_file(gpkg, layer="robni_pogoji_linije", driver="GPKG")
+    obmocje.to_file(gpkg, layer=f"{id_obmocja}_ohm", driver="GPKG")
+    linije.to_file(gpkg, layer=f"{id_obmocja}_rp_linije", driver="GPKG")
     for bc_id, tabela in tabele.items():
         sk = vrednosti[vrednosti["bc_id"] == bc_id].dropna(axis=1, how="all")
         pyogrio.write_dataframe(sk, gpkg, layer=tabela, driver="GPKG")
