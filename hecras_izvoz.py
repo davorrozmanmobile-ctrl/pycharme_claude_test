@@ -330,7 +330,7 @@ def sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti):
 # ---------------------------------------------------------------- glavni izvoz
 
 def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
-    """Izvozi aktivni plan v <izhod>/<id_obmocja>/. Vrne slovar s potmi in povzetkom."""
+    """Izvozi aktivni plan neposredno v mapo <izhod>. Vrne slovar s potmi in povzetkom."""
     preveri_id(id_obmocja)
     prj = najdi_prj(pot_projekta)
     plan, plan_hdf = najdi_aktivni_plan(prj)
@@ -343,7 +343,7 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
         vrednosti = preberi_rp_vrednosti(f, id_obmocja, linije, zacetek)
         nastavitve = sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti)
 
-    mapa = Path(izhod) / id_obmocja
+    mapa = Path(izhod)
     mapa.mkdir(parents=True, exist_ok=True)
     gpkg = mapa / f"{id_obmocja}_hecras.gpkg"
     txt = mapa / f"{id_obmocja}_nastavitve.txt"
