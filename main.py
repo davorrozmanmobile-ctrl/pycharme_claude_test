@@ -28,7 +28,11 @@ def main():
         sys.exit(1)
 
     print(f"Projekt:        {r['projekt']}")
-    print(f"Aktivni plan:   {r['plan']}  ({r['plan_hdf'].name})")
+    print(f"Aktivni plan:   {r['plan']} – {r['plan_ime']}  ({r['plan_hdf'].name})")
+    print(f"Zadnji zagon:   {r['zadnji_zagon']:%d.%m.%Y %H:%M:%S}")
+    for ime, cas in r["novejse"]:
+        print(f"  OPOZORILO: {ime} je bil spremenjen po zadnjem zagonu ({cas:%d.%m.%Y %H:%M:%S}) "
+              f"– izvoz morda ne odraža zadnjih sprememb; plan ponovno zaženite.")
     print(f"2D območja:     {r['st_obmocij']}")
     print(f"RP linije:      {r['st_rp_linij']}")
     print(f"RP vrednosti:   {r['st_rp_vrednosti']} vrstic v {len(r['tabele_rp'])} tabelah: {', '.join(r['tabele_rp'])}")

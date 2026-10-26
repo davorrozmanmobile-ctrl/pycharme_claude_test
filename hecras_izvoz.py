@@ -347,6 +347,23 @@ def sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti):
 
 # ---------------------------------------------------------------- glavni izvoz
 
+def zadnji_zagon(f, plan_hdf):
+    """Čas konca zadnjega zagona plana (iz 'Run Time Window'; rezerva: čas spremembe .pXX.hdf)."""
+    okno = _atributi(f, "Results/Unsteady/Summary").get("Run Time Window", "")
+    try:
+        return _ras_datum(okno.split(" to ")[-1])
+    except ValueError:
+        return datetime.fromtimestamp(plan_hdf.stat().st_mtime)
+
+
+def novejse_od_zagona(prj, info, zagon):
+    """Datoteke plana, geometrije in robnih pogojev, spremenjene po zadnjem zagonu (izvoz morda ni aktualen)."""
+    imena = [info.get(k, "") for k in ("Plan Filename", "Geometry Filename", "Flow Filename")]
+    poti = [prj.parent / i for i in imena if i]
+    return [(p.name, datetime.fromtimestamp(p.stat().st_mtime)) for p in poti
+            if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) > zagon]
+
+
 def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
     """Izvozi aktivni plan neposredno v mapo <izhod>. Vrne slovar s potmi in povzetkom."""
     preveri_id(id_obmocja)
@@ -360,6 +377,14 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
         linije = preberi_rp_linije(f, id_obmocja, crs)
         vrednosti = preberi_rp_vrednosti(f, id_obmocja, linije, zacetek)
         nastavitve = sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti)
+        info = _atributi(f, "Plan Data/Plan Information")
+        zagon = zadnji_zagon(f, plan_hdf)
+
+    novejse = novejse_od_zagona(prj, info, zagon)
+    if novejse:
+        nastavitve += "\n".join(_sekcija(
+            "OPOZORILO: datoteke spremenjene po zadnjem zagonu – izvoz morda ne odraža zadnjih sprememb",
+            [(ime, f"{cas:%d.%m.%Y %H:%M:%S}") for ime, cas in novejse])) + "\n"
 
     mapa = Path(izhod)
     mapa.mkdir(parents=True, exist_ok=True)
@@ -388,5 +413,6 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
     txt.write_text(nastavitve, encoding="utf-8-sig")  # BOM, da šumnike prav prikaže tudi Beležnica
 
     return {"projekt": prj, "plan": plan, "plan_hdf": plan_hdf, "gpkg": gpkg, "txt": txt,
+            "plan_ime": info.get("Plan Name", ""), "zadnji_zagon": zagon, "novejse": novejse,
             "st_obmocij": len(obmocje), "st_rp_linij": len(linije), "st_rp_vrednosti": len(vrednosti),
             "tabele_rp": list(tabele.values())}
