@@ -16,10 +16,14 @@ import h5py
 import numpy as np
 import pandas as pd
 import pyogrio
-from pyproj import CRS
+import shapely
+from pyproj import CRS, Transformer
+from pyproj.aoi import AreaOfInterest
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 
 ID_VZOREC = re.compile(r"^\d+_\d+$")
+EPSG_D48 = {3912, 3787}  # MGI 1901 / Slovene National Grid (D48/GK); 3787 je opuščena oznaka
+EPSG_D96 = 3794          # Slovenia 1996 / Slovene National Grid (D96/TM)
 NI_NASTAVLJENO = 3.0e38  # HEC-RAS za prazno vrednost zapiše float32 max
 
 # Opis vrednosti po tipu robnega pogoja: (ima_cas, opis stolpca vrednost, opis stolpca vrednost_2)
@@ -172,6 +176,48 @@ def preberi_crs(f):
     crs = CRS.from_wkt(wkt)
     epsg = crs.to_epsg(min_confidence=70)
     return CRS.from_epsg(epsg) if epsg else crs
+
+
+def ks_projekta(pot_projekta):
+    """Koordinatni sistem aktivnega plana (za vprašanje o transformaciji pred izvozom)."""
+    _, plan_hdf = najdi_aktivni_plan(najdi_prj(pot_projekta))
+    with h5py.File(plan_hdf, "r") as f:
+        return preberi_crs(f)
+
+
+def je_d48(crs):
+    return crs is not None and crs.to_epsg() in EPSG_D48
+
+
+def opis_ks(crs):
+    if crs is None:
+        return "neznan"
+    epsg = crs.to_epsg()
+    kratko = " – D48/GK" if epsg in EPSG_D48 else " – D96/TM" if epsg == EPSG_D96 else ""
+    return f"EPSG:{epsg} ({crs.name}{kratko})" if epsg else crs.name
+
+
+def v_d96(gdf_ji):
+    """Transformira GeoDataFrame-e iz D48/GK v D96/TM z regionalno transformacijo GURS za obseg podatkov.
+
+    Brez obsega bi PROJ izbral državno transformacijo (natančnost ~1 m); z obsegom izbere
+    regionalno 'D48/GK to D96/TM (n)' (~0,2 m). Vrne (seznam transformiranih, opis transformacije).
+    """
+    vir = gdf_ji[0].crs
+    obseg = gpd.GeoSeries(pd.concat([g.geometry for g in gdf_ji]), crs=vir).to_crs(4326).total_bounds
+    tr = Transformer.from_crs(vir, EPSG_D96, always_xy=True, area_of_interest=AreaOfInterest(*obseg))
+
+    def _xy(xy):
+        x, y = tr.transform(xy[:, 0], xy[:, 1])
+        return np.column_stack([x, y])
+
+    izhod = []
+    for g in gdf_ji:
+        g = g.copy()
+        g.geometry = gpd.GeoSeries(shapely.transform(g.geometry.values, _xy), index=g.index)
+        izhod.append(g.set_crs(EPSG_D96, allow_override=True))
+    uporabljena = tr.get_last_used_operation()  # PROJ izbere transformacijo šele ob izračunu
+    return izhod, f"{uporabljena.description} (natančnost {uporabljena.accuracy} m)"
 
 
 def preberi_obmocje(f, id_obmocja, plan, crs):
@@ -364,8 +410,11 @@ def novejse_od_zagona(prj, info, zagon):
             if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) > zagon]
 
 
-def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
-    """Izvozi aktivni plan neposredno v mapo <izhod>. Vrne slovar s potmi in povzetkom."""
+def izvozi(pot_projekta, id_obmocja, izhod="izhod", transformiraj_d96=False):
+    """Izvozi aktivni plan neposredno v mapo <izhod>. Vrne slovar s potmi in povzetkom.
+
+    transformiraj_d96: če je projekt v D48/GK, se poligoni in linije pretvorijo v D96/TM.
+    """
     preveri_id(id_obmocja)
     prj = najdi_prj(pot_projekta)
     plan, plan_hdf = najdi_aktivni_plan(prj)
@@ -379,6 +428,14 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
         nastavitve = sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti)
         info = _atributi(f, "Plan Data/Plan Information")
         zagon = zadnji_zagon(f, plan_hdf)
+
+    ks_izvoza, transformacija = crs, "brez"
+    if transformiraj_d96 and je_d48(crs):
+        (obmocje, linije), transformacija = v_d96([obmocje, linije])
+        obmocje["povrsina"] = obmocje.geometry.area
+        ks_izvoza = obmocje.crs
+    nastavitve += "\n".join(_sekcija("KOORDINATNI SISTEM", [
+        ("ks_projekta", opis_ks(crs)), ("ks_izvoza", opis_ks(ks_izvoza)), ("transformacija", transformacija)])) + "\n"
 
     novejse = novejse_od_zagona(prj, info, zagon)
     if novejse:
@@ -414,5 +471,6 @@ def izvozi(pot_projekta, id_obmocja, izhod="izhod"):
 
     return {"projekt": prj, "plan": plan, "plan_hdf": plan_hdf, "gpkg": gpkg, "txt": txt,
             "plan_ime": info.get("Plan Name", ""), "zadnji_zagon": zagon, "novejse": novejse,
+            "ks_projekta": opis_ks(crs), "ks_izvoza": opis_ks(ks_izvoza), "transformacija": transformacija,
             "st_obmocij": len(obmocje), "st_rp_linij": len(linije), "st_rp_vrednosti": len(vrednosti),
             "tabele_rp": list(tabele.values())}
