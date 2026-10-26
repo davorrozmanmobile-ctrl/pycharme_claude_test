@@ -192,11 +192,12 @@ def preberi_obmocje(f, id_obmocja, plan, crs):
     info = _atributi(f, "Plan Data/Plan Information")
     return gpd.GeoDataFrame(
         {
-            "id_obmocja": id_obmocja,
+            "OBM_ID": id_obmocja,
             "ime_2d": imena,
             "plan": plan,
             "plan_ime": info.get("Plan Name", ""),
-            "geometrija": info.get("Geometry Filename", ""),
+            "geom_ime": info.get("Geometry Filename", ""),
+            "rp_ime": info.get("Flow Filename", ""),
             "povrsina": [g.area for g in geometrije],
         },
         geometry=geometrije,
@@ -209,14 +210,14 @@ def preberi_rp_linije(f, id_obmocja, crs):
     if skupina not in f or "Attributes" not in f[skupina]:
         warnings.warn("Plan nima linij robnih pogojev.")
         return gpd.GeoDataFrame(
-            columns=["id_obmocja", "bc_id", "ime", "obmocje_2d", "tip", "geometry"], geometry="geometry", crs=crs
+            columns=["OBM_ID", "bc_id", "ime", "obmocje_2d", "tip", "geometry"], geometry="geometry", crs=crs
         )
     atr = f[f"{skupina}/Attributes"][()]
     oblike = _oblike(f, skupina)
     geometrije = [LineString(d[0]) if len(d) == 1 else MultiLineString(d) for d in oblike]
     return gpd.GeoDataFrame(
         {
-            "id_obmocja": id_obmocja,
+            "OBM_ID": id_obmocja,
             "bc_id": [f"{id_obmocja}_RP{i:02d}" for i in range(1, len(atr) + 1)],
             "ime": [_txt(a["Name"]) for a in atr],
             "obmocje_2d": [_txt(a["SA-2D"]) for a in atr],
@@ -241,7 +242,7 @@ def _ime_rp(ds, ime_dataseta):
 def preberi_rp_vrednosti(f, id_obmocja, linije, zacetek):
     """Vrne dolgo tabelo vrednosti robnih pogojev, povezano z linijami prek bc_id."""
     pot = "Event Conditions/Unsteady/Boundary Conditions"
-    stolpci = ["id_obmocja", "bc_id", "ime", "obmocje_2d", "tip", "zap_st", "cas", "cas_h",
+    stolpci = ["OBM_ID", "bc_id", "ime", "obmocje_2d", "tip", "zap_st", "cas", "cas_h",
                "vrednost", "opis_vrednosti", "vrednost_2", "opis_vrednosti_2", "enota", "enota_2"]
     if pot not in f:
         warnings.warn("Plan nima vrednosti robnih pogojev (Event Conditions).")
@@ -271,7 +272,7 @@ def preberi_rp_vrednosti(f, id_obmocja, linije, zacetek):
                 podatki = podatki.T
             for i, vr in enumerate(podatki, start=1):
                 vr = [_cisto(v) for v in vr]
-                vrstica = dict(id_obmocja=id_obmocja, bc_id=bc_id, ime=ime, obmocje_2d=obmocje, tip=tip, zap_st=i,
+                vrstica = dict(OBM_ID=id_obmocja, bc_id=bc_id, ime=ime, obmocje_2d=obmocje, tip=tip, zap_st=i,
                                opis_vrednosti=opis1, enota=enote.get(opis1, ""),
                                opis_vrednosti_2=opis2, enota_2=enote.get(opis2, "") if opis2 else None)
                 if ima_cas and len(vr) >= 2:
@@ -328,7 +329,7 @@ def sestavi_nastavitve(f, id_obmocja, prj, plan, plan_hdf, linije, vrednosti):
         "HEC-RAS – nastavitve simulacije in začetni pogoji",
         f"Izvoženo: {datetime.now():%Y-%m-%d %H:%M:%S}",
     ]
-    vrstice += _sekcija("IDENTIFIKATOR", [("id_obmocja", id_obmocja)])
+    vrstice += _sekcija("IDENTIFIKATOR", [("OBM_ID", id_obmocja)])
     vrstice += _sekcija("PROJEKT", [
         ("projekt", prj), ("aktivni_plan", plan), ("plan_hdf", plan_hdf),
         ("verzija_hecras", _txt(f.attrs.get("File Version", b""))),

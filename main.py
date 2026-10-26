@@ -9,7 +9,7 @@ def main():
         description="Izvoz aktivnega plana HEC-RAS 2D modela (območje, robni pogoji, nastavitve)."
     )
     parser.add_argument("projekt", nargs="?", help="mapa HEC-RAS projekta ali pot do .prj datoteke")
-    parser.add_argument("id_obmocja", nargs="?", help="unikatni identifikator območja, npr. 1100_01")
+    parser.add_argument("id_obmocja", nargs="?", metavar="OBM_ID", help="unikatni identifikator območja (OBM_ID), npr. 1100_01")
     parser.add_argument("--izhod", help="izhodna mapa (privzeto: ./izhod)")
     args = parser.parse_args()
 
@@ -17,7 +17,7 @@ def main():
     if not args.projekt:
         args.projekt = input("Pot do HEC-RAS projekta (mapa ali .prj): ").strip("﻿ \"'")
     if not args.id_obmocja:
-        args.id_obmocja = input("Identifikator območja (npr. 1100_01): ").strip()
+        args.id_obmocja = input("Identifikator območja (OBM_ID, npr. 1100_01): ").strip()
     if not args.izhod:
         args.izhod = input("Izhodna mapa [izhod]: ").strip().strip('"') or "izhod"
 
