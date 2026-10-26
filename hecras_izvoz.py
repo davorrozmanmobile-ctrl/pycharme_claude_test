@@ -241,7 +241,7 @@ def preberi_obmocje(f, id_obmocja, plan, crs):
             "OBM_ID": id_obmocja,
             "ime_2d": imena,
             "plan": plan,
-            "plan_ime": info.get("Plan Name", ""),
+            "plan_ime": info.get("Plan Filename", ""),
             "geom_ime": info.get("Geometry Filename", ""),
             "rp_ime": info.get("Flow Filename", ""),
             "povrsina": [g.area for g in geometrije],
